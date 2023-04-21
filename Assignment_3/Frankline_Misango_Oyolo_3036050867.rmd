@@ -1,0 +1,313 @@
+
+---
+title: "COMP2501 Assignment 3"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Requirements
+
+**Submission deadline: April 21st, 2023 at 23:59.**
+
+**Full mark of assignment 3: 34.**
+
+For the following questions, please:
+
+1. Replace all [Input here] places with your information or your answer.
+2. Complete the code block by adding your own code to fulfill the requirements in each question. Please use the existing code block and do not add your own code block. Noting that please use `head()` to show the corresponding results if there are too many rows in them.
+
+Please make sure your Rmd file is a valid Markdown document and can be successfully knitted.
+
+For assignment submission, please knit your final Rmd file into a Word document, and submit both your **Rmd** file and the knitted **Microsoft Word** document file to Moodle. You get 0 score if 1) the Rmd file you submitted cannot be knitted, and 2) you have not submitted a Word document. For each visualization question, please make sure that the generated plot is shown in-place with the question and after the code block. 
+
+---
+
+
+## Name and UID
+
+Name: Frankline Misango Oyolo
+
+UID: 3036050867
+
+---
+
+
+### Environmental setup 
+You need to have the `dplyr`, `ggplot2` and `HistData` packages installed. If not yet, please run `install.packages(c("dplyr", "ggplot2", "HistData"))` in your R environment.
+
+```{r}
+# Load the package.
+# install.packages("HistData")
+library(dplyr)
+library(ggplot2)
+library(HistData)
+```
+
+
+### 1. (1 points) Suppose that you roll a 6-sided die six times, compute the probability of not seeing a number bigger than 3.
+
+```{r}
+dice_outcomes <- 1:6
+sample_space <- expand.grid(dice_outcomes, dice_outcomes, dice_outcomes, dice_outcomes, dice_outcomes, dice_outcomes)
+count <- sum(apply(sample_space, 1, function(x) all(x <= 3)))
+probability <- count / 6^6
+probability
+
+
+```
+
+
+### 2. (1 points) Suppose two NBA teams, say the Warriors and the Kings, are playing a seven game series (The first to win four games, therefore, wins the series). The Warriors are a better team and have a 70% chance of winning each game. What is the probability that the Kings win at least one game?
+
+```{r}
+kings_win <-1 - dbinom(0, size=7, prob=0.3)
+kings_win
+
+```
+
+
+### 3. (2 points) Create a Monte Carlo simulation to confirm your answer to the previous question. Use `B <- 10000` simulations. Hint: use the following code to generate the results of the first four games: `kings_wins <- sample(c(0,1), 4, replace = TRUE, prob = c(0.7, 0.3))`. Noting that the Kings must win at least one of these four games.
+
+```{r}
+set.seed(123) # for reproducibility
+B <- 10000 # number of simulations
+count_wins <- 0 # count the number of simulations where the Kings win at least one game
+for (i in 1:B) {
+  # simulate the results of the first four games
+  kings_wins <- sample(c(0,1), 4, replace = TRUE, prob = c(0.7, 0.3))
+  # check if the Kings won at least one of the first four games
+  if (sum(kings_wins) >= 1) {
+    count_wins <- count_wins + 1
+  }
+}
+# estimate the probability of the Kings winning at least one game
+P_atleast1_sim <- count_wins / B
+P_atleast1_sim
+
+
+```
+
+
+### 4. (2 points) Suppose two NBA teams, say the Warriors and the Bucks, are playing a seven game championship series (The first to win four games, therefore, wins the series). The two teams are equally good so they each have a 50-50 chance of winning each game. If the Warriors lose the first game, what is the probability that they win the series?
+
+```{r}
+# Define the probabilities
+p_win <- 0.5  # Both teams are equally good
+p_lose_first_game_given_win <- sum(dbeta(0:3, 4, 4))  # Probability of losing the first game given that they win the series
+p_lose_and_bucks_win_series <- 6 * p_win^4 * (1 - p_win)^3  # Probability of losing the first game and the Bucks winning the series
+p_lose_first_game <- p_lose_and_bucks_win_series + p_win * p_lose_first_game_given_win
+
+# Apply Bayes' theorem
+p_win_given_lose_first_game <- p_lose_first_game_given_win * p_win / p_lose_first_game
+
+# Print the result
+p_win_given_lose_first_game
+
+
+```
+
+
+### 5. (2 points) Create a Monte Carlo simulation to confirm your answer to the previous question. Use `B <- 10000` simulations. 
+
+```{r}
+
+# Simulate the outcomes of B series
+set.seed(123)
+outcomes <- replicate(B, {
+  sample(c(0, 1), 6, replace = TRUE, prob = c(p_win, 1 - p_win))
+})
+
+# Count the number of series won by the Warriors after losing the first game
+num_wins <- sum(rowSums(outcomes) == 3)
+
+# Compute the estimated probability
+p_win_est <- num_wins / B
+
+# Print the result
+p_win_est
+
+```
+
+
+### 6. (2 points) Suppose two NBA teams, say the Warriors and the Bucks, are playing a seven game championship series (The first to win four games, therefore, wins the series). The Warriors is better than the Bucks and has a p>0.5 chance of winning each game. Given a value p, use the function `sapply` to compute the probability of winning the series for the Bucks for `p <- seq(0.55, 0.95, 0.025)`. Then plot the result with `geom_histogram()`.
+
+```{r}
+
+library(tidyverse)
+
+# Define the probabilities
+p <- seq(0.55, 0.95, 0.025)  # Range of p values
+p_win <- p  # Probability that the Warriors win a single game
+p_lose_and_bucks_win_series <- 6 * (1 - p_win)^3 * p_win^4  # Probability of the Bucks winning the series
+
+# Compute the probability of winning the series for each value of p
+p_bucks_win_series <- 1 - p_lose_and_bucks_win_series
+
+# Plot the result
+df <- data.frame(p = p, p_bucks_win_series = p_bucks_win_series)
+ggplot(df, aes(x = p_bucks_win_series)) + 
+  geom_histogram(bins = 20, color = "black", fill = "lightblue", alpha = 0.5) + 
+  ggtitle("Probability of Bucks Winning Series") + 
+  xlab("Probability") + 
+  ylab("Frequency") + 
+  theme_minimal()
+
+```
+
+
+### 7. (1 points) Repeat the question above, but now keep the probability fixed at `p <- 0.7` and compute the probability of winning the series for the Bucks for different series lengths: best of 3 games, 5 games, 7 games,… Specifically, `N <- seq(3, 31, 2)`. Then plot the result with `geom_histogram()`.
+
+```{r}
+library(tidyverse)
+
+# Define the series lengths
+N <- seq(3, 31, 2)
+
+# Define the probability of the Warriors winning a single game
+p_win <- 0.7
+
+# Define a function to compute the probability of winning the series
+p_bucks_win_series <- function(N) {
+  if (N %% 2 == 0) {  # If the series is even
+    k <- N/2  # Number of games each team needs to win
+    p_lose_and_bucks_win_series <- choose(N, k) * p_win^k * (1-p_win)^(N-k) + 
+      choose(N, k-1) * p_win^(k-1) * (1-p_win)^(N-k+1)
+  } else {  # If the series is odd
+    k <- ceiling(N/2)  # Number of games each team needs to win
+    p_lose_and_bucks_win_series <- choose(N, k-1) * p_win^(k-1) * (1-p_win)^(N-k) + 
+      choose(N, k) * p_win^k * (1-p_win)^(N-k)
+  }
+  return(1 - p_lose_and_bucks_win_series)
+}
+
+# Compute the probability of winning the series for each series length
+p_bucks_win_series <- sapply(N, p_bucks_win_series)
+
+# Plot the result
+df <- data.frame(N = N, p_bucks_win_series = p_bucks_win_series)
+ggplot(df, aes(x = p_bucks_win_series)) + 
+  geom_histogram(bins = 20, color = "black", fill = "lightblue", alpha = 0.5) + 
+  ggtitle("Probability of Bucks Winning Series") + 
+  xlab("Probability") + 
+  ylab("Frequency") + 
+  theme_minimal()
+
+```
+
+
+### 8. (2 points) The distribution of IQ scores is approximately normally distributed. The average is 100 and the standard deviation is 15. Suppose you want to know the distribution of the highest IQ among 10,000 people. Run a Monte Carlo simulation with `B=100` generating 10,000 IQ scores and keeping the highest. Then plot the result with `geom_histogram()`.
+
+```{r}
+B <- 100  # number of simulations
+n <- 10000  # number of people
+mu <- 100  # mean IQ
+sigma <- 15  # standard deviation of IQ
+
+# Simulate B samples of n IQ scores and keep the highest
+highest_iq <- replicate(B, max(rnorm(n, mean = mu, sd = sigma)))
+
+# Plot the histogram of the highest IQ scores
+library(ggplot2)
+ggplot(data.frame(highest_iq), aes(x = highest_iq)) +
+  geom_histogram(bins = 30, fill = "lightblue", color = "black") +
+  labs(title = "Distribution of the highest IQ among 10,000 people",
+       x = "IQ score", y = "Frequency")
+
+
+```
+
+
+### 9. (2 points) Load the `GaltonFamilies` data from the `HistData`. Make four separated scatterplots for heights between mothers and daughters, mothers and sons, fathers and daughters, and fathers and sons. Compute the correlation in heights between mothers and daughters, mothers and sons, fathers and daughters, and fathers and sons.
+
+```{r}
+# Load the HistData package
+library(HistData)
+
+# Subset the GaltonFamilies dataset to only include height data
+data("GaltonFamilies")
+height_data <- GaltonFamilies[, c("mother", "father", "childHeight")]
+
+# Rename columns for better readability
+colnames(height_data) <- c("Mother Height", "Father Height", "Child Height")
+
+# Scatterplot of mother and daughter heights
+library(ggplot2)
+ggplot(height_data, aes(x = `Mother Height`, y = `Child Height`)) +
+  geom_point() +
+  labs(title = "Mother and Daughter Heights",
+       x = "Mother Height (inches)", y = "Child Height (inches)")
+
+# Correlation between mother and daughter heights
+cor(height_data$`Mother Height`, height_data$`Child Height`)
+
+# Scatterplot of mother and son heights
+ggplot(height_data, aes(x = `Mother Height`, y = `Child Height`)) +
+  geom_point() +
+  labs(title = "Mother and Son Heights",
+       x = "Mother Height (inches)", y = "Child Height (inches)")
+
+# Correlation between mother and son heights
+cor(height_data$`Mother Height`, height_data$`Child Height`[height_data$`Child Height` > 0 & height_data$`Father Height` > 0])
+
+# Scatterplot of father and daughter heights
+ggplot(height_data, aes(x = `Father Height`, y = `Child Height`)) +
+  geom_point() +
+  labs(title = "Father and Daughter Heights",
+       x = "Father Height (inches)", y = "Child Height (inches)")
+
+# Correlation between father and daughter heights
+cor(height_data$`Father Height`, height_data$`Child Height`[height_data$`Child Height` > 0 & height_data$`Mother Height` > 0])
+
+# Scatterplot of father and son heights
+ggplot(height_data, aes(x = `Father Height`, y = `Child Height`)) +
+  geom_point() +
+  labs(title = "Father and Son Heights",
+       x = "Father Height (inches)", y = "Child Height (inches)")
+
+# Correlation between father and son heights
+cor(height_data$`Father Height`, height_data$`Child Height`)
+
+
+```
+
+
+### 10. (2 points) Load the `GaltonFamilies` data from the `HistData`. Create a dataset called `galton_heights` by randomly picking a daughter of each family. `galton_heights` should have two columns, including father's and daughter's height. Using the `lm` function to obtain the least squares estimates between the father's and daughter's height. What is the estimated model coefficients.
+
+```{r}
+library(HistData)
+set.seed(123)
+
+# create dataset with one randomly chosen daughter per family
+galton_heights <- GaltonFamilies[, c("father", "childHeight")][GaltonFamilies$gender == "female", ]
+galton_heights <- galton_heights[!duplicated(galton_heights$father), ]
+
+# fit linear regression model
+model <- lm(childHeight ~ father, data = galton_heights)
+
+# print model coefficients
+summary(model)$coefficients
+
+```
+
+
+### 11. (17 points) Essay: (From Prof. RB Luo) In the midterm exam, we tried something different. The use of RStudio was allowed. The use of Google and ChatGPT was allowed. The use of instant messengers was allowed. After all, as I mentioned in my lecture, if you can only take one thing away from this course, make it “knowing how to get started when given a data science problem”. But I am unsure how well the trial has worked out, especially from my students’ perspective. If you have attended the midterm exam, how do you like the exam form? How would you like to improve the questions to help you to achieve the learning goals? If I ask you to be my TA and help me design the midterm exam for next year’s class, what would you suggest? More generally, what improvements to the course would you suggest so I can do better the next year? Let me know your thoughts because when one teaches, two learn.
+
+[Input here]
+
+As a student who took the midterm exam with these new rules, I found the experience to be very helpful. Having access to RStudio, Google, and ChatGPT allowed me to work more efficiently and explore the data in more depth. I appreciated the opportunity to use real-world tools to solve a data science problem, and I feel like I learned a lot from the experience.
+
+However, I can see how some students might have found the new exam format challenging. For example, students who were less familiar with RStudio or who had trouble finding relevant information on Google might have struggled to keep up. It might be helpful to provide some resources or guidance beforehand to help students prepare for the exam.
+
+In terms of improving the questions, I think it would be useful to have more questions that require students to apply what they've learned in a creative way. For example, instead of just asking students to calculate a statistic or run a regression, the questions could ask them to design an experiment or come up with a novel approach to solving a problem. This would help reinforce the practical skills that are so important in data science.
+
+If I were asked to be a TA and help design next year's exam, I would suggest incorporating more group work or collaboration into the exam. Data science is often a collaborative field, and working together on the exam could help students learn from each other and practice their communication skills. It could also help reduce the stress and pressure that students might feel when working alone.
+
+Overall, I think the course has been very useful and informative so far. However, I would suggest incorporating more hands-on exercises or projects throughout the course, rather than just in the midterm exam. This would allow students to practice applying what they've learned in a more low-stakes environment and get more feedback on their work. Additionally, it might be helpful to provide more resources or tutorials on some of the technical skills that are required for the course, such as using R or working with large datasets.
+
