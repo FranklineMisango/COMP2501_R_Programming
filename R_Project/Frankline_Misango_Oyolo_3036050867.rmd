@@ -1,0 +1,223 @@
+
+---
+title: "COMP 2501 : Stock Ticker Research using NLP and Pre-Trained Hugging Face model" 
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+---
+
+### Installing the needed packages from Python 
+```{r}
+
+library(reticulate)
+reticulate::py_install(c("transformers", "torch", "sentencepiece", "pipeline", "bs4", "requests", "tensorflow"), pip = TRUE)
+```
+
+### Environmental setup 
+
+```{r}
+
+sentencepiece <- import("sentencepiece")
+tensorflow <- import("tensorflow")
+transformers <- import("transformers")
+requests <- import("requests")
+PegasusTokenizer <- import("transformers", "PegasusTokenizer")
+PegasusForConditionalGeneration <- import("transformers", "PegasusForConditionalGeneration")
+TFPegasusForConditionalGeneration <- import("transformers", "TFPegasusForConditionalGeneration")
+BeautifulSoup <- import("bs4", "BeautifulSoup")
+pipeline <- import("transformers", "pipeline")
+
+
+```
+
+### 2.Installing pre-requisites for the transformers
+```{r}
+# Loading and saving the summarization models from the pre-trained Hugging face model
+# Loading reticulate to the current R session
+library(reticulate)
+library(here)
+
+# Retrieve/force initialization of Python
+reticulate::py_config()
+reticulate::py_available()
+```
+
+### 3. Calling the model from hugging face
+```{r}
+install.packages("transformers")
+library(transformers)
+
+model_name <- "human-centered-summarization/financial-summarization-pegasus"
+tokenizer <- AutoTokenizer$from_pretrained(model_name)
+model <- PegasusForConditionalGeneration$from_pretrained(model_name)
+
+
+```
+
+
+### 3. This Code slice focuses on the Automation of more than one stock symbol
+
+```{r}
+library(rvest)
+
+search_for_stock_news_urls <- function(ticker){
+  search_url <- paste0("https://www.google.com/search?q=yahoo+finance+",ticker,"&tbm=nws")
+  r <- read_html(search_url)
+  atags <- r %>% html_nodes('a')
+  hrefs <- atags %>% html_attr('href')
+  return(hrefs)
+}
+
+num_tickers <- as.integer(readline("Enter the number of stock tickers you want to monitor: "))
+monitored_tickers <- character(num_tickers)
+for (i in 1:num_tickers){
+  ticker <- readline(paste0("Enter the company ticker ",i,": "))
+  monitored_tickers[i] <- ticker
+}
+
+raw_urls <- lapply(monitored_tickers, search_for_stock_news_urls)
+names(raw_urls) <- monitored_tickers
+raw_urls
+
+
+```
+
+
+### 3. Generating the small articles 
+
+```{r}
+library(rvest)
+
+# Function to Scrape and Process URLs
+scrape_and_process <- function(urls){
+  ARTICLES <- vector(mode = "list", length = length(urls))
+  
+  for (i in seq_along(urls)){
+    r <- read_html(urls[i])
+    paragraphs <- r %>% html_nodes("p")
+    text <- sapply(paragraphs, html_text)
+    words <- strsplit(text, " ")[[1]][1:400]
+    ARTICLE <- paste(words, collapse = " ")
+    ARTICLES[[i]] <- ARTICLE
+  }
+  return(ARTICLES)
+}
+
+# Get articles for each ticker using the function
+articles <- l
+
+
+```
+
+
+### summaries from Facebook BART
+
+```{r}
+library(transformers)
+
+# Define the summarization pipeline
+summarizer <- pipeline("summarization", model="facebook/bart-large-cnn")
+
+# Function to summarize all articles
+summarize_all_articles <- function(articles){
+  summaries <- vector(mode = "list", length = length(articles))
+  
+  for (i in seq_along(articles)){
+    # Use the summarizer pipeline to generate a summary
+    summary <- summarizer(articles[i], max_length=120, min_length=30, do_sample=FALSE)[[1]]$summary_text
+    summaries[[i]] <- summary
+  }
+  return(summaries)
+}
+
+# Get summaries for each ticker using the function
+summaries <- lapply(articles, summarize_all_articles)
+
+# Convert the result to a named list
+names(summaries) <- monitored_tickers
+
+# Print the output
+summaries
+
+
+
+```
+
+
+### sentiment analysis on summaries 
+
+```{r}
+
+library(transformers)
+
+# Define the model and tokenizer
+model_name <- "distilbert-base-uncased-finetuned-sst-2-english"
+model_revision <- "af0f99b"
+model <- AutoModelForSequenceClassification::from_pretrained(model_name, revision=model_revision)
+tokenizer <- AutoTokenizer::from_pretrained(model_name, revision=model_revision)
+
+# Define the sentiment analysis pipeline
+sentiment <- pipeline("sentiment-analysis", model=model, tokenizer=tokenizer)
+
+# Call the pipeline to perform sentiment labelling for the summaries
+# Assuming that the 'summaries' variable from the previous code block is still in memory
+sentiment_labels <- lapply(summaries, function(ticker_summaries){
+  lapply(ticker_summaries, function(summary){
+    result <- sentiment(summary)[[1]]
+    list(label=result$label, score=result$score)
+  })
+})
+
+# Convert the result to a named list
+names(sentiment_labels) <- monitored_tickers
+
+# Print the output
+sentiment_labels
+
+
+```
+
+
+### Final sentiment analysis and the negative labels
+
+```{r}
+
+library(transformers)
+library(stringr)
+
+# Define the stop words and phrases
+stop_words <- c("Ourengineersareworkingquicklytoresolvetheissue. Thankyouforyourpatience. Back to Mail Online home. back to the page you came from.", "2023-私隱權政策-條款. ©2023. www.japanewspaper.com")
+
+# Define the sentiment analysis pipeline
+sentiment <- pipeline("sentiment-analysis", model=model, tokenizer=tokenizer)
+
+# Call the pipeline to generate sentiment scores for the summaries
+scores <- lapply(summaries, function(ticker_summaries){
+  sentiment(ticker_summaries)
+})
+
+# Print the sentiment analysis results
+for (ticker in monitored_tickers) {
+  cat(paste0("\nSentiment analysis for ", ticker, ":\n"))
+  for (i in seq_along(scores[[ticker]])) {
+    summary <- summaries[[ticker]][[i]]
+    score <- scores[[ticker]][[i]]
+    if (any(str_detect(summary, regex(stop_words, ignore_case=TRUE))) || str_trim(summary) == "") {
+      next  # Skip if the summary contains stop words or phrases, or is blank
+    }
+    cat(paste0(i, ". Summary: ", summary, "\n"))
+    cat(paste0("   Score: ", score$score, ", Label: ", score$label, "\n"))
+  }
+  negative_count <- sum(sapply(scores[[ticker]], function(score) score$label == "NEGATIVE"))
+  if (negative_count > 5) {
+    cat(paste0("\nThe model finds that stock ", ticker, " is not doing well currently. We recommend that you don't buy for short holding.\n"))
+  } else if (negative_count == 5) {
+    cat(paste0("\nThe model generates a neutral view on stock ", ticker, ", further research is needed: Bloomberg / Expedia refinement.\n"))
+  } else if (negative_count < 5) {
+    cat(paste0("\nThe model finds that stock ", ticker, " is good to buy for the short term. Contact our brokers to buy.\n"))
+  }
+}
+
+
+```
