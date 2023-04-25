@@ -35,9 +35,16 @@ pipeline <- import("transformers", "pipeline")
 ```{r}
 # Loading and saving the summarization models from the pre-trained Hugging face model
 # Loading reticulate to the current R session
-library(reticulate)
-library(here)
+library(keras)
+library(tensorflow)
+library(dplyr)
+library(tfdatasets)
 
+transformer = reticulate::import('transformers')
+physical_devices = tf$config$list_physical_devices('GPU')
+tf$config$experimental$set_memory_growth(physical_devices[[1]],TRUE)
+
+tf$keras$backend$set_floatx('float32')
 # Retrieve/force initialization of Python
 reticulate::py_config()
 reticulate::py_available()
