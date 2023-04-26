@@ -1,20 +1,20 @@
 
 ---
-title: "COMP 2501 : Stock Ticker Research using NLP and Pre-Trained Hugging Face model" 
+title: "COMP 2501 Project : Stock Ticker Research using NLP and Pre-Trained Hugging Face model" 
 output:
   word_document: default
   html_document:
     df_print: paged
 ---
 
-### Installing the needed packages from Python 
+### 1. Installing the needed packages from Python 
 ```{r}
 
 library(reticulate)
 reticulate::py_install(c("transformers", "torch", "sentencepiece", "pipeline", "bs4", "requests", "tensorflow"), pip = TRUE)
 ```
 
-### Environmental setup 
+###2. Environmental setup 
 
 ```{r}
 
@@ -28,12 +28,10 @@ TFPegasusForConditionalGeneration <- import("transformers", "TFPegasusForConditi
 BeautifulSoup <- import("bs4", "BeautifulSoup")
 pipeline <- import("transformers", "pipeline")
 
-
 ```
 
-### 2.Installing pre-requisites for the transformers
+### 3.Installing pre-requisites for the transformers
 ```{r}
-# Loading and saving the summarization models from the pre-trained Hugging face model
 # Loading reticulate to the current R session
 library(keras)
 library(tensorflow)
@@ -41,8 +39,6 @@ library(dplyr)
 library(tfdatasets)
 
 transformer = reticulate::import('transformers')
-physical_devices = tf$config$list_physical_devices('GPU')
-tf$config$experimental$set_memory_growth(physical_devices[[1]],TRUE)
 
 tf$keras$backend$set_floatx('float32')
 # Retrieve/force initialization of Python
@@ -50,81 +46,112 @@ reticulate::py_config()
 reticulate::py_available()
 ```
 
-### 3. Calling the model from hugging face
+### 4. Calling the model from hugging face
 ```{r}
-install.packages("transformers")
-library(transformers)
 
-model_name <- "human-centered-summarization/financial-summarization-pegasus"
-tokenizer <- AutoTokenizer$from_pretrained(model_name)
-model <- PegasusForConditionalGeneration$from_pretrained(model_name)
-
+model_name = "human-centered-summarization/financial-summarization-pegasus"
+# get Tokenizer
+tokenizer <- transformer$PegasusTokenizer$from_pretrained(model_name,do_lower_case=TRUE)
+# get Model
+model <- transformers$PegasusForConditionalGeneration$from_pretrained(model_name)
 
 ```
 
 
-### 3. This Code slice focuses on the Automation of more than one stock symbol
+### 5. This Code slice focuses on the Automation of more than one stock symbol
 
 ```{r}
 library(rvest)
 
-search_for_stock_news_urls <- function(ticker){
-  search_url <- paste0("https://www.google.com/search?q=yahoo+finance+",ticker,"&tbm=nws")
+search_for_stock_news_urls <- function(ticker) {
+  search_url <- paste0("https://www.google.com/search?q=yahoo+finance+", ticker, "&tbm=nws")
   r <- read_html(search_url)
-  atags <- r %>% html_nodes('a')
-  hrefs <- atags %>% html_attr('href')
+  atags <- r %>% html_nodes("a")
+  hrefs <- atags %>% html_attr("href")
   return(hrefs)
 }
 
 num_tickers <- as.integer(readline("Enter the number of stock tickers you want to monitor: "))
-monitored_tickers <- character(num_tickers)
-for (i in 1:num_tickers){
-  ticker <- readline(paste0("Enter the company ticker ",i,": "))
-  monitored_tickers[i] <- ticker
+monitored_tickers <- vector()
+for (i in 1:num_tickers) {
+  ticker <- readline(paste0("Enter the company ticker ", i, ": "))
+  monitored_tickers <- c(monitored_tickers, ticker)
 }
 
-raw_urls <- lapply(monitored_tickers, search_for_stock_news_urls)
+raw_urls <- lapply(monitored_tickers, function(ticker) {
+  urls <- search_for_stock_news_urls(ticker)
+  return(urls)
+})
 names(raw_urls) <- monitored_tickers
 raw_urls
 
 
 ```
 
+### 6. Stripping the unwanted URLs
+```{R}
 
-### 3. Generating the small articles 
+library(stringr)
 
-```{r}
+excluded_list <- c('maps', 'policies', 'preferences', 'support', 'accounts')
+
+strip_unwanted_urls <- function(urls, excluded_list) {
+  final_val <- character(0)
+  for (url in urls) {
+    if (str_detect(url, "https://") && !any(str_detect(url, excluded_list))) {
+      res <- str_extract(url, "https://\\S+") %>% str_split("&") %>% .[[1]]
+      final_val <- c(final_val, res)
+    }
+  }
+  final_val <- final_val[str_sub(final_val, -5) == ".html"]
+  return(unique(final_val))
+}
+
+
+cleaned_urls <- lapply(raw_urls, function(urls) {
+  cleaned <- strip_unwanted_urls(urls, excluded_list)
+  return(cleaned)
+})
+names(cleaned_urls) <- monitored_tickers
+cleaned_urls
+
+
+```
+### 7. Scrapping and cleaning the URLs for the paragraphs
+
+```{R}
+
 library(rvest)
 
-# Function to Scrape and Process URLs
-scrape_and_process <- function(urls){
-  ARTICLES <- vector(mode = "list", length = length(urls))
+scrape_and_process <- function(urls) {
+  ARTICLES <- vector("character", length = length(urls))
   
-  for (i in seq_along(urls)){
+  for (i in seq_along(urls)) {
     r <- read_html(urls[i])
     paragraphs <- r %>% html_nodes("p")
     text <- sapply(paragraphs, html_text)
-    words <- strsplit(text, " ")[[1]][1:400]
-    ARTICLE <- paste(words, collapse = " ")
-    ARTICLES[[i]] <- ARTICLE
+    words <- unlist(strsplit(paste(text, collapse = ""), " ", fixed = TRUE))[1:400]
+    ARTICLE <- paste(words, collapse = "")
+    ARTICLES[i] <- ARTICLE
   }
+  
   return(ARTICLES)
 }
 
-# Get articles for each ticker using the function
-articles <- l
+articles <- lapply(cleaned_urls, scrape_and_process)
+names(articles) <- monitored_tickers
+articles
 
 
 ```
 
 
-### summaries from Facebook BART
+### 8. Calling the Facebook summaries from Facebook BART
 
 ```{r}
-library(transformers)
 
 # Define the summarization pipeline
-summarizer <- pipeline("summarization", model="facebook/bart-large-cnn")
+summarizer <- transformer$pipeline("summarization", model="facebook/bart-large-cnn")
 
 # Function to summarize all articles
 summarize_all_articles <- function(articles){
@@ -132,12 +159,11 @@ summarize_all_articles <- function(articles){
   
   for (i in seq_along(articles)){
     # Use the summarizer pipeline to generate a summary
-    summary <- summarizer(articles[i], max_length=120, min_length=30, do_sample=FALSE)[[1]]$summary_text
+    summary <- summarizer(articles[i], max_length=120, min_length=30L, do_sample=FALSE)[[1]]$summary_text
     summaries[[i]] <- summary
   }
   return(summaries)
 }
-
 # Get summaries for each ticker using the function
 summaries <- lapply(articles, summarize_all_articles)
 
@@ -148,24 +174,23 @@ names(summaries) <- monitored_tickers
 summaries
 
 
-
 ```
 
 
-### sentiment analysis on summaries 
+###9. Sentiment analysis on summaries 
 
 ```{r}
-
-library(transformers)
 
 # Define the model and tokenizer
 model_name <- "distilbert-base-uncased-finetuned-sst-2-english"
 model_revision <- "af0f99b"
-model <- AutoModelForSequenceClassification::from_pretrained(model_name, revision=model_revision)
-tokenizer <- AutoTokenizer::from_pretrained(model_name, revision=model_revision)
+
+
+model <- transformers$AutoModelForSequenceClassification$from_pretrained(model_name, revision=model_revision)
+tokenizer <- transformers$AutoTokenizer$from_pretrained(model_name, revision=model_revision)
 
 # Define the sentiment analysis pipeline
-sentiment <- pipeline("sentiment-analysis", model=model, tokenizer=tokenizer)
+sentiment <- transformer$pipeline("sentiment-analysis", model=model, tokenizer=tokenizer)
 
 # Call the pipeline to perform sentiment labelling for the summaries
 # Assuming that the 'summaries' variable from the previous code block is still in memory
@@ -186,18 +211,14 @@ sentiment_labels
 ```
 
 
-### Final sentiment analysis and the negative labels
+###10. Final, Outputting negative labels
 
 ```{r}
 
-library(transformers)
 library(stringr)
 
 # Define the stop words and phrases
-stop_words <- c("Ourengineersareworkingquicklytoresolvetheissue. Thankyouforyourpatience. Back to Mail Online home. back to the page you came from.", "2023-私隱權政策-條款. ©2023. www.japanewspaper.com")
-
-# Define the sentiment analysis pipeline
-sentiment <- pipeline("sentiment-analysis", model=model, tokenizer=tokenizer)
+stop_words <- c("Ourengineersareworkingquicklytoresolvetheissue. Thankyouforyourpatience. Back to Mail Online home. back to the page you came from.")
 
 # Call the pipeline to generate sentiment scores for the summaries
 scores <- lapply(summaries, function(ticker_summaries){
@@ -222,7 +243,7 @@ for (ticker in monitored_tickers) {
   } else if (negative_count == 5) {
     cat(paste0("\nThe model generates a neutral view on stock ", ticker, ", further research is needed: Bloomberg / Expedia refinement.\n"))
   } else if (negative_count < 5) {
-    cat(paste0("\nThe model finds that stock ", ticker, " is good to buy for the short term. Contact our brokers to buy.\n"))
+    cat(paste0("\nThe model finds that stock ", ticker, " is worth looking for to buy for the short term. Contact our brokers to buy.\n"))
   }
 }
 
