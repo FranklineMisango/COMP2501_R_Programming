@@ -14,7 +14,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Requirements
 
-**Submission deadline: April 21st, 2023 at 23:59.**
+**Submission deadline: April 28th, 2023 at 23:59.**
 
 **Full mark of assignment 3: 34.**
 
@@ -60,15 +60,17 @@ count <- sum(apply(sample_space, 1, function(x) all(x <= 3)))
 probability <- count / 6^6
 probability
 
-
 ```
 
 
 ### 2. (1 points) Suppose two NBA teams, say the Warriors and the Kings, are playing a seven game series (The first to win four games, therefore, wins the series). The Warriors are a better team and have a 70% chance of winning each game. What is the probability that the Kings win at least one game?
 
 ```{r}
-kings_win <-1 - dbinom(0, size=7, prob=0.3)
-kings_win
+kings_prob <- 0.3
+warriors_prob <- 0.7
+kings_win_no_games <- warriors_prob^4
+kings_win_atleast_1_game <- 1 - kings_win_no_games
+kings_win_atleast_1_game
 
 ```
 
@@ -76,20 +78,22 @@ kings_win
 ### 3. (2 points) Create a Monte Carlo simulation to confirm your answer to the previous question. Use `B <- 10000` simulations. Hint: use the following code to generate the results of the first four games: `kings_wins <- sample(c(0,1), 4, replace = TRUE, prob = c(0.7, 0.3))`. Noting that the Kings must win at least one of these four games.
 
 ```{r}
-set.seed(123) # for reproducibility
-B <- 10000 # number of simulations
-count_wins <- 0 # count the number of simulations where the Kings win at least one game
+set.seed(42)  # Set seed for reproducibility
+
+B <- 10000  # Number of simulations
+kings_prob <- 0.3
+warriors_prob <- 0.7
+wins <- numeric(B)
+
 for (i in 1:B) {
-  # simulate the results of the first four games
-  kings_wins <- sample(c(0,1), 4, replace = TRUE, prob = c(0.7, 0.3))
-  # check if the Kings won at least one of the first four games
-  if (sum(kings_wins) >= 1) {
-    count_wins <- count_wins + 1
+  kings_wins <- sample(c(0,1), 4, replace = TRUE, prob = c(warriors_prob, kings_prob))
+  if (sum(kings_wins) > 0) {
+    wins[i] <- 1
   }
 }
-# estimate the probability of the Kings winning at least one game
-P_atleast1_sim <- count_wins / B
-P_atleast1_sim
+
+kings_win_atleast_1_game_mc <- mean(wins)
+kings_win_atleast_1_game_mc
 
 
 ```
@@ -98,17 +102,14 @@ P_atleast1_sim
 ### 4. (2 points) Suppose two NBA teams, say the Warriors and the Bucks, are playing a seven game championship series (The first to win four games, therefore, wins the series). The two teams are equally good so they each have a 50-50 chance of winning each game. If the Warriors lose the first game, what is the probability that they win the series?
 
 ```{r}
-# Define the probabilities
-p_win <- 0.5  # Both teams are equally good
-p_lose_first_game_given_win <- sum(dbeta(0:3, 4, 4))  # Probability of losing the first game given that they win the series
-p_lose_and_bucks_win_series <- 6 * p_win^4 * (1 - p_win)^3  # Probability of losing the first game and the Bucks winning the series
-p_lose_first_game <- p_lose_and_bucks_win_series + p_win * p_lose_first_game_given_win
+p_warriors <- 0.5
+p_bucks <- 0.5
+#Warriors need 4 games to win the series
+r <- c(4, 5, 6)
+p_warriors_win_series_and_lose_game_1 <- sum(p_bucks * choose(6, r) * p_warriors^r * p_bucks^(6-r))
+p_answer <- p_warriors_win_series_and_lose_game_1 / p_bucks
+p_answer
 
-# Apply Bayes' theorem
-p_win_given_lose_first_game <- p_lose_first_game_given_win * p_win / p_lose_first_game
-
-# Print the result
-p_win_given_lose_first_game
 
 
 ```
@@ -118,20 +119,13 @@ p_win_given_lose_first_game
 
 ```{r}
 
-# Simulate the outcomes of B series
-set.seed(123)
-outcomes <- replicate(B, {
-  sample(c(0, 1), 6, replace = TRUE, prob = c(p_win, 1 - p_win))
-})
+set.seed(41)
+B <- 10000
+warriors_wins <- matrix(sample(c(0, 1), B*6, replace = TRUE, prob = c(0.5, 0.5)), ncol = 6)
+series_count <- sum(rowSums(warriors_wins) >= 4)
+p_answer <- series_count/B
+p_answer
 
-# Count the number of series won by the Warriors after losing the first game
-num_wins <- sum(rowSums(outcomes) == 3)
-
-# Compute the estimated probability
-p_win_est <- num_wins / B
-
-# Print the result
-p_win_est
 
 ```
 
@@ -139,25 +133,28 @@ p_win_est
 ### 6. (2 points) Suppose two NBA teams, say the Warriors and the Bucks, are playing a seven game championship series (The first to win four games, therefore, wins the series). The Warriors is better than the Bucks and has a p>0.5 chance of winning each game. Given a value p, use the function `sapply` to compute the probability of winning the series for the Bucks for `p <- seq(0.55, 0.95, 0.025)`. Then plot the result with `geom_histogram()`.
 
 ```{r}
+library(ggplot2)
 
-library(tidyverse)
+probability_bucks_win <- function(x) {
+  n <- 7
+  prob <- sum(dbinom((floor(n/2)+1):n, n, x))
+  return(1 - prob)
+}
 
-# Define the probabilities
-p <- seq(0.55, 0.95, 0.025)  # Range of p values
-p_win <- p  # Probability that the Warriors win a single game
-p_lose_and_bucks_win_series <- 6 * (1 - p_win)^3 * p_win^4  # Probability of the Bucks winning the series
+p <- seq(0.55, 0.95, 0.025)
+probability_bucks_win <- sapply(p, probability_bucks_win)
+probability_bucks_win
 
-# Compute the probability of winning the series for each value of p
-p_bucks_win_series <- 1 - p_lose_and_bucks_win_series
+df <- data.frame(p, probability_bucks_win)
 
-# Plot the result
-df <- data.frame(p = p, p_bucks_win_series = p_bucks_win_series)
-ggplot(df, aes(x = p_bucks_win_series)) + 
-  geom_histogram(bins = 20, color = "black", fill = "lightblue", alpha = 0.5) + 
-  ggtitle("Probability of Bucks Winning Series") + 
-  xlab("Probability") + 
-  ylab("Frequency") + 
-  theme_minimal()
+ggplot(df, aes(x = p, y = probability_bucks_win)) +
+  geom_col() + 
+  labs(title = "How Probability of Warrior's winning affects the outcome of the series",
+       x = "Probability of Warriors Winning a Game",
+       y = "Probability of Bucks Winning the Series")
+
+
+
 
 ```
 
@@ -165,39 +162,24 @@ ggplot(df, aes(x = p_bucks_win_series)) +
 ### 7. (1 points) Repeat the question above, but now keep the probability fixed at `p <- 0.7` and compute the probability of winning the series for the Bucks for different series lengths: best of 3 games, 5 games, 7 games,… Specifically, `N <- seq(3, 31, 2)`. Then plot the result with `geom_histogram()`.
 
 ```{r}
-library(tidyverse)
+library(ggplot2)
 
-# Define the series lengths
-N <- seq(3, 31, 2)
-
-# Define the probability of the Warriors winning a single game
-p_win <- 0.7
-
-# Define a function to compute the probability of winning the series
-p_bucks_win_series <- function(N) {
-  if (N %% 2 == 0) {  # If the series is even
-    k <- N/2  # Number of games each team needs to win
-    p_lose_and_bucks_win_series <- choose(N, k) * p_win^k * (1-p_win)^(N-k) + 
-      choose(N, k-1) * p_win^(k-1) * (1-p_win)^(N-k+1)
-  } else {  # If the series is odd
-    k <- ceiling(N/2)  # Number of games each team needs to win
-    p_lose_and_bucks_win_series <- choose(N, k-1) * p_win^(k-1) * (1-p_win)^(N-k) + 
-      choose(N, k) * p_win^k * (1-p_win)^(N-k)
-  }
-  return(1 - p_lose_and_bucks_win_series)
+probability_bucks_win <- function(x, n) {
+  prob <- sum(dbinom((floor(n/2)+1):n, n, x))
+  return(prob)
 }
 
-# Compute the probability of winning the series for each series length
-p_bucks_win_series <- sapply(N, p_bucks_win_series)
+p <- 0.7
+N <- seq(3, 31, 2)
+prob_bucks_win <- sapply(N, function(x) probability_bucks_win(p, x))
 
-# Plot the result
-df <- data.frame(N = N, p_bucks_win_series = p_bucks_win_series)
-ggplot(df, aes(x = p_bucks_win_series)) + 
-  geom_histogram(bins = 20, color = "black", fill = "lightblue", alpha = 0.5) + 
-  ggtitle("Probability of Bucks Winning Series") + 
-  xlab("Probability") + 
-  ylab("Frequency") + 
-  theme_minimal()
+df <- data.frame(N, prob_bucks_win)
+
+ggplot(df, aes(x = prob_bucks_win)) +
+  geom_histogram(binwidth = 0.02) + 
+  labs(title = "Probability of Bucks Winning the Series",
+       x = "Probability",
+       y = "Count")
 
 ```
 
@@ -281,33 +263,35 @@ cor(height_data$`Father Height`, height_data$`Child Height`)
 ### 10. (2 points) Load the `GaltonFamilies` data from the `HistData`. Create a dataset called `galton_heights` by randomly picking a daughter of each family. `galton_heights` should have two columns, including father's and daughter's height. Using the `lm` function to obtain the least squares estimates between the father's and daughter's height. What is the estimated model coefficients.
 
 ```{r}
+set.seed(42)
 library(HistData)
-set.seed(123)
+library(dplyr)
 
-# create dataset with one randomly chosen daughter per family
-galton_heights <- GaltonFamilies[, c("father", "childHeight")][GaltonFamilies$gender == "female", ]
-galton_heights <- galton_heights[!duplicated(galton_heights$father), ]
+galton_heights <- GaltonFamilies |>
+  filter(gender == "female") |>
+  group_by(family) |>
+  sample_n(1) |>
+  ungroup() |>
+  select(father, childHeight) |>
+  rename("Father Height" = father, "Daughter Height" = childHeight) 
+
+galton_heights
+
 
 # fit linear regression model
-model <- lm(childHeight ~ father, data = galton_heights)
+galton_heights |> lm() |> summary()
 
-# print model coefficients
-summary(model)$coefficients
 
 ```
 
 
 ### 11. (17 points) Essay: (From Prof. RB Luo) In the midterm exam, we tried something different. The use of RStudio was allowed. The use of Google and ChatGPT was allowed. The use of instant messengers was allowed. After all, as I mentioned in my lecture, if you can only take one thing away from this course, make it “knowing how to get started when given a data science problem”. But I am unsure how well the trial has worked out, especially from my students’ perspective. If you have attended the midterm exam, how do you like the exam form? How would you like to improve the questions to help you to achieve the learning goals? If I ask you to be my TA and help me design the midterm exam for next year’s class, what would you suggest? More generally, what improvements to the course would you suggest so I can do better the next year? Let me know your thoughts because when one teaches, two learn.
 
-[Input here]
+As a machine learning engineer in real life, this is within the top 5 of the courses that I have ever taken at HKU. Usage of Rstudio, Google and chatGPT reflects what I am encouraged to do in my field of work. I am appreciative of the course efforts to mirror what tends to happen in the real data science world compared to other traditional assessments that don't encourage a 21st-century approach to solving problems. While I didn't use instant messengers, I am happy to have seen an avenue for collaboration being encouraged. This is very accurate when it comes to real-world technical development. The midterm exam was smooth for me because it allowed me to express the most efficient code that solved the problems. The internet was a very good resource this time.
 
-As a student who took the midterm exam with these new rules, I found the experience to be very helpful. Having access to RStudio, Google, and ChatGPT allowed me to work more efficiently and explore the data in more depth. I appreciated the opportunity to use real-world tools to solve a data science problem, and I feel like I learned a lot from the experience.
+ In terms of improving the questions, I think it would be useful to have more questions that require students to apply what they've learned in a creative way instead of a multiple-choice approach. This approach may have encouraged some students to just paste the questions and answers to GPT and immediately get an answer.  For example, the questions could be modelled to ask them to design a web scrapping tool for movies or a using dataset x, design a pipeline of doing y.  I believe this would encourage diversity of answers and multiple approaches hence encouraging learning.  If students would then compare this with each other, key weaknesses would be brought up encouraging learning by discussion and further reinforcing the practical skills that are so important in data science.
 
-However, I can see how some students might have found the new exam format challenging. For example, students who were less familiar with RStudio or who had trouble finding relevant information on Google might have struggled to keep up. It might be helpful to provide some resources or guidance beforehand to help students prepare for the exam.
+The course could be improved in a few ways:
 
-In terms of improving the questions, I think it would be useful to have more questions that require students to apply what they've learned in a creative way. For example, instead of just asking students to calculate a statistic or run a regression, the questions could ask them to design an experiment or come up with a novel approach to solving a problem. This would help reinforce the practical skills that are so important in data science.
-
-If I were asked to be a TA and help design next year's exam, I would suggest incorporating more group work or collaboration into the exam. Data science is often a collaborative field, and working together on the exam could help students learn from each other and practice their communication skills. It could also help reduce the stress and pressure that students might feel when working alone.
-
-Overall, I think the course has been very useful and informative so far. However, I would suggest incorporating more hands-on exercises or projects throughout the course, rather than just in the midterm exam. This would allow students to practice applying what they've learned in a more low-stakes environment and get more feedback on their work. Additionally, it might be helpful to provide more resources or tutorials on some of the technical skills that are required for the course, such as using R or working with large datasets.
-
+1. If next year platforms like ed that have an embedded coding environment could help TAs to accurately pass feedback on assignments. I received “Q6,7” as feedback for assignmentbut could find specifically what I need to improve on 
+2. More individual projects. I remember as part of my internship as a Data Analyst for the ALG in South Africa, I had to design a project on my own that investigates and visualizes the crime rate in SA. That meant downloading my own unclean datasets and working from the ground up. While this view was applied in our end-of-term project, having to work on 2-3 solid projects within the term that do this instead of assignments that contain clean datasets, rarely in the real world, would expose students to more learning. 
