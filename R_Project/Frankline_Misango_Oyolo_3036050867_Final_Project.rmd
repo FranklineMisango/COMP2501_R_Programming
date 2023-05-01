@@ -126,14 +126,13 @@ strip_unwanted_urls <- function(urls, excluded_list) {
   final_val <- character(0)
   for (url in urls) {
     if (str_detect(url, "https://") && !any(str_detect(url, excluded_list))) {
-      res <- str_extract(url, "https://\\S+") %>% str_split("&") %>% .[[1]]
+      res <- str_extract_all(url, "https://\\S+")[[1]] %>% str_split("&") %>% .[[1]]
       final_val <- c(final_val, res)
     }
   }
   final_val <- final_val[str_sub(final_val, -5) == ".html"]
   return(unique(final_val))
 }
-
 
 cleaned_urls <- lapply(raw_urls, function(urls) {
   cleaned <- strip_unwanted_urls(urls, excluded_list)
@@ -203,9 +202,13 @@ summaries
 ```
 
 
+
 ###9. Sentiment analysis on summaries 
 
 ```{r}
+#Visual Library
+library(ggplot2)
+
 
 # Define the model and tokenizer
 model_name <- "distilbert-base-uncased-finetuned-sst-2-english"
@@ -229,21 +232,44 @@ sentiment_labels <- lapply(summaries, function(ticker_summaries){
 
 # Convert the result to a named list
 names(sentiment_labels) <- monitored_tickers
+library(ggplot2)
 
-# Print the output
-sentiment_labels
+# Extract negative sentiment scores
+negative_scores <- unlist(lapply(sentiment_labels, function(x) {
+  unlist(lapply(x, function(y) {
+    if (y$label == "NEGATIVE") y$score else NA
+  }))
+}))
 
+# Create a dataframe for the scatter plot
+df <- data.frame(Summary = rep(seq_along(negative_scores), each = 1),
+                 Score = negative_scores)
+
+# Create a new column for the color of the dots
+df$Color <- ifelse(df$Score > 0.5, "red", "blue")
+
+# Create the scatter plot
+ggplot(df, aes(x = Summary, y = Score, color = Color)) +
+  geom_point() +
+  geom_hline(yintercept = 0.5, linetype = "dashed", color = "gray50") +
+  scale_x_continuous(breaks = seq(1, nrow(df), 1)) +
+  scale_y_continuous(breaks = seq(0, 1, 0.1)) +
+  theme_classic() +
+  labs(x = "Summary Number", y = "Negative Sentiment Score")
 
 ```
-
 
 ###10. Final, Outputting negative labels
 
 ```{r}
-
 # Define the stop words and phrases
 stop_words <- c('Ourengineersareworkingquicklytoresolvetheissue. Thankyouforyourpatience. Back to Mail Online home. back to the page you came from.', '2023-私隱權政策-條款. ©2023. www.japanewspaper.com')
 
+#Getting the scores
+
+scores <- lapply(summaries, function(ticker_summaries){
+  sentiment(ticker_summaries)
+})
 # Define a function to count the sentiment labels
 count_sentiment_labels <- function(scores) {
   sentiment_counts <- c('NEGATIVE' = 0, 'NEUTRAL' = 0, 'POSITIVE' = 0)
@@ -259,15 +285,16 @@ count_sentiment_labels <- function(scores) {
 # Loop through the tickers and print the sentiment analysis results
 for (ticker in monitored_tickers) {
   cat(paste0('\nSentiment analysis for ', ticker, ':\n'))
+  sentiment_counts <- c('NEGATIVE' = 0, 'NEUTRAL' = 0, 'POSITIVE' = 0) # initialize counts for each ticker
   for (i in seq_along(scores[[ticker]])) {
     score <- scores[[ticker]][[i]]
     summary <- summaries[[ticker]][[i]]
-    if (any(grepl(stop_words, summary)) || grepl('^\\s*$', summary)) {
+    if (any(grepl(paste(stop_words, collapse = "|"), summary)) || grepl('^\\s*$', summary)) {
       next  # Skip if the sentiment contains stop words or phrases, or is blank
     }
     cat(paste0(i, '. Summary: ', summary, '\n'))
     cat(paste0('   Score: ', score[['score']], ', Label: ', score[['label']], '\n'))
-    sentiment_counts <- count_sentiment_labels(scores[[ticker]])
+    sentiment_counts <- sentiment_counts + count_sentiment_labels(list(score)) # add sentiment counts for each summary
   }
   negative_count <- sentiment_counts[['NEGATIVE']]
   if (negative_count > 5) {
@@ -284,9 +311,9 @@ sentiment_counts <- c('NEGATIVE' = 0, 'NEUTRAL' = 0, 'POSITIVE' = 0)
 for (ticker in monitored_tickers) {
   sentiment_counts <- sentiment_counts + count_sentiment_labels(scores[[ticker]])
 }
-
-# Visualize the sentiment counts using a bar chart
-barplot(sentiment_counts, main = 'Sentiment Analysis Results', xlab = 'Sentiment Label', ylab = 'Count')
-
+cat(paste0('\nSentiment counts for your ticker(s):\n'))
+cat(paste0('Negative: ', sentiment_counts[['NEGATIVE']], '\n'))
+cat(paste0('Neutral: ', sentiment_counts[['NEUTRAL']], '\n'))
+cat(paste0('Positive: ', sentiment_counts[['POSITIVE']], '\n'))
 
 ```
